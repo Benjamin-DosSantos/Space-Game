@@ -9,41 +9,55 @@
 import SpriteKit
 import CoreMotion
 
-class GameScene: SKScene {
+public var activeEnemies: Int = 0;
+
+class GameScene: SKScene, SKPhysicsContactDelegate {
     
-    let player = SKSpriteNode(imageNamed:"Spaceship")
+    let player = SKSpriteNode(imageNamed:"Spaceship");
     
-    let score = SKLabelNode(fontNamed:"Copperplate")
-    let level = SKLabelNode(fontNamed:"Copperplate")
+    let score = SKLabelNode(fontNamed:"Copperplate");
+    let level = SKLabelNode(fontNamed:"Copperplate");
     
     var currentScore: Int = 0;
     var currentLevel: Int = 1;
     let amountWon = 10;
     
-    var motionManager = CMMotionManager()
-    var destX:CGFloat  = 0.0
+    var motionManager = CMMotionManager();
+    var destX: CGFloat  = 0.0;
     
-    let leftArrow = UIImage(named: "leftArrow") as UIImage?
-    let rightArrow = UIImage(named: "rightArrow") as UIImage?
-    let fireButtonImage = UIImage(named: "fireButton") as UIImage?
+    let leftArrow = UIImage(named: "leftArrow") as UIImage?;
+    let rightArrow = UIImage(named: "rightArrow") as UIImage?;
+    let fireButtonImage = UIImage(named: "fireButton") as UIImage?;
     
-    let leftButton = UIButton(type: UIButtonType.Custom) as UIButton
-    let rightButton = UIButton(type: UIButtonType.Custom) as UIButton
-    let fireButton = UIButton(type: UIButtonType.Custom) as UIButton
+    let leftButton = UIButton(type: UIButtonType.Custom) as UIButton;
+    let rightButton = UIButton(type: UIButtonType.Custom) as UIButton;
+    let fireButton = UIButton(type: UIButtonType.Custom) as UIButton;
     
-    var rightTimer: NSTimer!
-    var leftTimer: NSTimer!
-    var fireTimer: NSTimer!
+    var rightTimer: NSTimer!;
+    var leftTimer: NSTimer!;
+    var fireTimer: NSTimer!;
     
     let playerMoveAmount: CGFloat = 20;
     
+    let missileCategory: UInt32 = 0x1 << 0;
+    let enemyCategory: UInt32 = 0x1 << 1;
+    let topCategory: UInt32 = 0x1 << 2;
+    
+    /*
+        Name:
+        Parameters:
+        Return(s):
+        Description:
+    */
     override func didMoveToView(view: SKView) {
-        /* Setup your scene here */
+        physicsWorld.contactDelegate = self
+        setupBorder();
         setupScoreLabel();
         setupLevelLabel();
-        createPlayer(CGPoint(x:CGRectGetMidX(self.frame), y: CGRectGetMidY(self.frame) - 100));
+        createPlayer(CGPoint(x:CGRectGetMidX(self.frame), y: CGRectGetMidY(self.frame) - 200));
         setupButtons();
-        generateEnemy(CGPoint(x: CGRectGetMidY(self.frame), y: CGRectGetMidX(self.frame)));
+        generateEnemies(self);
+        flowToScene(self, position: CGPoint(x: CGRectGetMidX(self.frame), y: CGRectGetMidY(self.frame)));
     }// End of didMoveToView function
     
     override func touchesBegan(touches: Set<UITouch>, withEvent event: UIEvent?) {
@@ -55,25 +69,51 @@ class GameScene: SKScene {
     }// End of update function
     
     func createPlayer(location: CGPoint){
-        player.xScale = 0.2
-        player.yScale = 0.2
+        player.xScale = 0.1
+        player.yScale = 0.1
         player.position = location;
-        
+       
         self.addChild(player)
     }// End of createPlayer function
     
     func setupScoreLabel(){
-        score.fontSize = 45
+        score.color = UIColor.blackColor();
+        score.fontSize = 30
         score.position = CGPoint(x:CGRectGetMidX(self.frame) + 100, y:CGRectGetMaxY(self.frame) - 50)
+        score.text = "Score: " + String(currentScore);
         self.addChild(score)
     }// End of setupScoreLable function
     
+    func incrementScore(){
+        currentScore = currentScore + amountWon;
+        score.text = "Score: " + String(currentScore);
+    }
+    
     func setupLevelLabel(){
-        level.fontSize = 45
-        level.position = CGPoint(x: CGRectGetMidX(self.frame) - 100, y:CGRectGetMaxY(self.frame) - 50)
+        level.color = UIColor.blackColor();
+        level.fontSize = 30
+        level.position = CGPoint(x: CGRectGetMidX(self.frame) - 130, y:CGRectGetMaxY(self.frame) - 50)
         level.text = "Level: " + String(currentLevel);
         self.addChild(level)
     }// End of setupLevelLevel function
+    
+    func setupBorder(){
+        let topRect = CGRect(x: frame.origin.x, y: frame.height + 100  , width: frame.size.width, height: 1)
+        let top = SKNode()
+        top.physicsBody = SKPhysicsBody(edgeLoopFromRect: topRect)
+        top.physicsBody?.categoryBitMask = topCategory;
+        addChild(top);
+        
+        let leftRect = CGRect(x: frame.origin.x, y: frame.height  , width: 1, height: frame.height)
+        let left = SKNode()
+        left.physicsBody = SKPhysicsBody(edgeLoopFromRect: leftRect)
+        addChild(left);
+        
+        let rightRect = CGRect(x: frame.width, y: frame.height, width: 1, height: frame.height)
+        let right = SKNode()
+        right.physicsBody = SKPhysicsBody(edgeLoopFromRect: rightRect)
+        addChild(right);
+    }
     
     func setupButtons(){
         setupLeftButton();
@@ -143,7 +183,7 @@ class GameScene: SKScene {
     
     func fireButtonDown(sender: AnyObject) {
         singleFire()
-        fireTimer = NSTimer.scheduledTimerWithTimeInterval(0.3, target: self, selector: #selector(rapidFire), userInfo: nil, repeats: true)
+        fireTimer = NSTimer.scheduledTimerWithTimeInterval(0.4, target: self, selector: #selector(rapidFire), userInfo: nil, repeats: true)
     }// End of fireButtonDown funciton
     
     func fireButtonUp(sender: AnyObject) {
@@ -154,13 +194,16 @@ class GameScene: SKScene {
         let missile = SKSpriteNode(imageNamed: "missile");
         missile.position = player.position;
         
-        missile.xScale = 0.03;
-        missile.yScale = 0.03;
+        missile.xScale = 0.01;
+        missile.yScale = 0.01;
         missile.zPosition = -1;
         
         missile.physicsBody = SKPhysicsBody(rectangleOfSize: missile.frame.size);
         missile.physicsBody!.usesPreciseCollisionDetection = true;
         missile.physicsBody?.affectedByGravity = false;
+        missile.physicsBody?.allowsRotation = false;
+        missile.physicsBody?.categoryBitMask = missileCategory;
+        missile.physicsBody?.contactTestBitMask = enemyCategory;
         missile.name = "missile";
         
         self.addChild(missile)
@@ -174,17 +217,40 @@ class GameScene: SKScene {
         singleFire();
     }// End of rapidFire function
     
-    func generateEnemy(position: CGPoint){
-        let enemy = SKSpriteNode(imageNamed: "Spaceship");
-        enemy.color = UIColor.redColor();
-        enemy.position = position;
-        enemy.xScale = 0.2;
-        enemy.yScale = 0.2;
+    func didBeginContact(contact: SKPhysicsContact) {
         
-        enemy.physicsBody = SKPhysicsBody(rectangleOfSize: enemy.frame.size);
-        enemy.physicsBody!.usesPreciseCollisionDetection = true;
-        enemy.physicsBody?.affectedByGravity = false;
+        var missile : SKNode? = nil
+        var enemy: SKNode? = nil;
         
-        self.addChild(enemy);
-    }// End of generateEnemy function
+        if contact.bodyA.categoryBitMask < contact.bodyB.categoryBitMask {
+            missile = contact.bodyA.node
+            enemy = contact.bodyB.node;
+        }else{
+            missile = contact.bodyB.node
+            enemy = contact.bodyA.node;
+        }
+        
+        missile?.removeFromParent();
+        enemy?.removeFromParent();
+        activeEnemies = activeEnemies - 1;
+        if(checkForEnemies()){
+            levelUp();
+            spriteArray.removeAll();
+            generateEnemies(self);
+            flowToScene(self, position: CGPoint(x: CGRectGetMidX(self.frame), y: CGRectGetMidY(self.frame)));
+        }// End of if there are still Enemies
+        incrementScore();
+    }// End of didBeginContact
+    
+    func checkForEnemies() -> Bool{
+        if(activeEnemies == 0){
+            return true;
+        }// End of if there are active
+        return false;
+    }// End of checkForEnemies function
+    
+    func levelUp(){
+        currentLevel = currentLevel + 1;
+        level.text = "Level: " + String(currentLevel);
+    }// End of level up function
 }// End of class
